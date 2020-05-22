@@ -13,10 +13,13 @@ class Database extends Translation implements DriverInterface
 
     protected $scanner;
 
+    protected $allLanguages;
+
     public function __construct($sourceLanguage, $scanner)
     {
         $this->sourceLanguage = $sourceLanguage;
         $this->scanner = $scanner;
+        $this->allLanguages = Language::all();
     }
 
     /**
@@ -99,7 +102,7 @@ class Database extends Translation implements DriverInterface
      */
     public function addGroupTranslation($language, $group, $key, $value = '')
     {
-        if (! $this->languageExists($language)) {
+        if (!$this->languageExists($language)) {
             $this->addLanguage($language);
         }
 
@@ -126,7 +129,7 @@ class Database extends Translation implements DriverInterface
      */
     public function addSingleTranslation($language, $vendor, $key, $value = '')
     {
-        if (! $this->languageExists($language)) {
+        if (!$this->languageExists($language)) {
             $this->addLanguage($language);
         }
 
@@ -150,11 +153,14 @@ class Database extends Translation implements DriverInterface
      */
     public function getSingleTranslationsFor($language)
     {
+        if (!$this->languageExists($language)) {
+            return Collection::make([]);
+        }
         $translations = $this->getLanguage($language)
-            ->translations()
-            ->where('group', 'like', '%single')
-            ->orWhereNull('group')
-            ->get()
+            ->translations
+            ->filter(function ($translation) {
+                return !$translation->group || preg_match('/.*single$/', $translation->group);
+            })
             ->groupBy('group');
 
         // if there is no group, this is a legacy translation so we need to
@@ -181,13 +187,15 @@ class Database extends Translation implements DriverInterface
      */
     public function getGroupTranslationsFor($language)
     {
+        if (!$this->languageExists($language)) {
+            return Collection::make([]);
+        }
         $translations = $this->getLanguage($language)
-            ->translations()
-            ->whereNotNull('group')
-            ->where('group', 'not like', '%single')
-            ->get()
+            ->translations
+            ->filter(function ($translation) {
+                return $translation->group && !preg_match('/.*single$/', $translation->group);
+            })
             ->groupBy('group');
-
         return $translations->map(function ($translations) {
             return $translations->mapWithKeys(function ($translation) {
                 return [$translation->key => $translation->value];
@@ -225,7 +233,7 @@ class Database extends Translation implements DriverInterface
      */
     private function getLanguage($language)
     {
-        return Language::where('language', $language)->first();
+        return $this->allLanguages->where('language', strtolower($language))->first();
     }
 
     /**
